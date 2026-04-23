@@ -11,19 +11,14 @@ and tmux.
 
 ## Demo
 
-A 30-second asciicast of the switching-machines flow lives at
-[`demo.cast`](demo.cast). To play locally:
+![ccmux demo](demo.gif)
+
+30-second walkthrough of the switching-machines flow. The raw asciinema
+recording is also at [`demo.cast`](demo.cast) if you want to replay it
+in an asciinema player:
 
 ```bash
 asciinema play demo.cast
-```
-
-To host it on asciinema.org and embed an inline player in this README:
-
-```bash
-asciinema upload demo.cast
-# copy the returned URL and add to this README:
-#   [![asciicast](https://asciinema.org/a/<ID>.svg)](https://asciinema.org/a/<ID>)
 ```
 
 ## Why
