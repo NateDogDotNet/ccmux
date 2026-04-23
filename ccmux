@@ -3,7 +3,7 @@
 # https://github.com/NateDogDotNet/ccmux
 # SPDX-License-Identifier: MIT
 
-CCMUX_VERSION="0.1.0"
+CCMUX_VERSION="0.1.1"
 
 # Default arguments passed to `claude` on new session creation.
 # Override by exporting CCMUX_DEFAULT_ARGS before running. Examples:
@@ -16,6 +16,11 @@ CCMUX_DEFAULT_ARGS="${CCMUX_DEFAULT_ARGS:-}"
 # Override per-invocation with a positional <name> argument, or globally via
 # CCMUX_SESSION_PREFIX.
 CCMUX_SESSION_PREFIX="${CCMUX_SESSION_PREFIX:-}"
+
+# Apply 'mouse on' to each ccmux-created session so wheel scrolling and
+# click-to-select work. Session-scoped — does not modify your tmux.conf or
+# affect other sessions. Set CCMUX_MOUSE=off to disable.
+CCMUX_MOUSE="${CCMUX_MOUSE:-on}"
 
 print_help() {
     cat <<'HELP'
@@ -72,6 +77,10 @@ ENVIRONMENT
                           export CCMUX_DEFAULT_ARGS="--dangerously-skip-permissions -c"
   CCMUX_SESSION_PREFIX  Override the <project> portion of session names.
                         Defaults to basename of $PWD.
+  CCMUX_MOUSE           'on' (default) or 'off'. When on, ccmux applies
+                        'set-option mouse on' to each session it creates so
+                        wheel scrolling works. Session-scoped — never touches
+                        your tmux.conf or other sessions.
 
 EXAMPLES
   ccmux                 Everyday use: attach-or-create in current project.
@@ -126,6 +135,17 @@ ccmux_drop_arg() {
         out+=("$t")
     done
     printf '%s' "${out[*]}"
+}
+
+# Create a detached tmux session, apply ccmux session-scoped options, then
+# attach. Keeps the user's ~/.tmux.conf and other sessions untouched.
+ccmux_new_session() {
+    local name="$1" cmd="$2"
+    tmux new-session -d -s "$name" "$cmd" || return
+    if [[ "$CCMUX_MOUSE" == "on" ]]; then
+        tmux set-option -t "$name" mouse on >/dev/null 2>&1
+    fi
+    tmux attach -t "=$name"
 }
 
 ccmux_main() {
@@ -212,7 +232,7 @@ ccmux_main() {
         if tmux has-session -t "=$session" 2>/dev/null; then
             tmux attach $attach_flag "=$session"
         else
-            tmux new-session -s "$session" "$cmd"
+            ccmux_new_session "$session" "$cmd"
         fi
         return
     fi
@@ -248,7 +268,7 @@ ccmux_main() {
     while tmux has-session -t "=${project}-${n}" 2>/dev/null; do
         n=$((n+1))
     done
-    tmux new-session -s "${project}-${n}" "$cmd"
+    ccmux_new_session "${project}-${n}" "$cmd"
 }
 
 ccmux_main "$@"

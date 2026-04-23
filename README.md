@@ -100,6 +100,14 @@ Optional session-name override:
 export CCMUX_SESSION_PREFIX="myproject"   # default is basename of $PWD
 ```
 
+Mouse scrolling is enabled by default on ccmux-created sessions (session-scoped,
+never touches your `~/.tmux.conf`). If you prefer keyboard-only navigation, opt
+out:
+
+```bash
+export CCMUX_MOUSE=off
+```
+
 ## Usage
 
 Run `ccmux --help` for the full reference. The quick version:
@@ -154,6 +162,44 @@ interactive shell to be bash — just have bash installed.
 Yes. Any Linux terminal works — native, tmux in ssh, etc. The code-server
 use case is what motivated it, but there's nothing code-server-specific
 in the code.
+
+## Troubleshooting
+
+### Scrolling
+
+Mouse wheel scrolling works out of the box — ccmux applies `set-option mouse on`
+to every session it creates (session-scoped, so your `~/.tmux.conf` and other
+tmux sessions are untouched). If the wheel still doesn't scroll, your terminal
+may be intercepting it; try holding **Shift** while scrolling to bypass the
+terminal and hit tmux's scrollback directly.
+
+Prefer keyboard-only? Disable the default:
+
+```bash
+export CCMUX_MOUSE=off
+```
+
+**Keyboard copy-mode** is always available regardless of the mouse setting:
+press `Ctrl-b [` to enter, navigate with arrow keys / PageUp / PageDown / Vim
+keys, then `q` or `Enter` to exit.
+
+### Scrollback buffer is too short
+
+tmux defaults to 2000 lines of history per pane. If you lose output to the top,
+bump the limit in your `~/.tmux.conf`:
+
+```
+set -g history-limit 100000
+```
+
+(This is a pane-creation-time option, so ccmux can't set it per-session after
+the fact — it has to go in your tmux config.)
+
+### The view snaps to the bottom while Claude is "Thinking"
+
+This is a Claude Code UI behavior, not tmux. Recent versions support `Ctrl-6`
+as a freeze toggle: press it once to pause output while you scroll, press again
+to unfreeze and catch up.
 
 ## License
 
