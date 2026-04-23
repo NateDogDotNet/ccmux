@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# ccmux — Claude Code + tmux launcher. One tmux SESSION per Claude instance.
+# https://github.com/YOUR_USERNAME/ccmux
+# SPDX-License-Identifier: MIT
+
+CCMUX_VERSION="0.1.0"
+
+# Default arguments passed to `claude` on new session creation.
+# Override by exporting CCMUX_DEFAULT_ARGS before running. Examples:
+#   export CCMUX_DEFAULT_ARGS="--dangerously-skip-permissions -c"
+#   export CCMUX_DEFAULT_ARGS="-c"
+# Empty string (the default) means plain `claude` with no extra flags.
+CCMUX_DEFAULT_ARGS="${CCMUX_DEFAULT_ARGS:-}"
+
+# Session-name prefix. Defaults to basename of current directory.
+# Override per-invocation with a positional <name> argument, or globally via
+# CCMUX_SESSION_PREFIX.
+CCMUX_SESSION_PREFIX="${CCMUX_SESSION_PREFIX:-}"
+
+print_help() {
+    cat <<'HELP'
+NAME
+  ccmux — launch or reattach to Claude Code inside persistent tmux sessions
+
+SYNOPSIS
+  ccmux [options] [<name>]
+
+DESCRIPTION
+  ccmux runs Claude Code inside a named tmux session so the Claude process
+  survives disconnects, browser closes, machine switches, and editor
+  restarts (especially useful inside code-server / VS Code remote).
+
+  Sessions are auto-named "<project>-<N>" where <project> is the basename
+  of the current directory (override with $CCMUX_SESSION_PREFIX or a
+  positional argument). ccmux picks N for you — you never have to remember
+  or assign session numbers.
+
+  With no arguments, ccmux attaches to the lowest-numbered UNATTACHED
+  session for the current project, or creates a new one if none are
+  available. Run ccmux in multiple terminals to get side-by-side Claudes
+  in the same project.
+
+OPTIONS
+  -n, --new             Force a brand-new session (skip reattachment).
+  -t, --takeover        Take over a running session, detaching other clients.
+                        Without <name>, targets the lowest-numbered project
+                        session (attached or not). Use when switching
+                        machines and the previous client still holds it.
+  -T, --takeover-all    Detach all clients from every <project>-N session.
+                        Housekeeping only — does not attach. Intended flow:
+                        run this once, then open N terminals and run plain
+                        'ccmux' in each.
+  -p, --plain           Launch plain 'claude' (drop all default args).
+  -s, --safe            Drop '--dangerously-skip-permissions' from defaults.
+  -f, --fresh           Drop '-c' from defaults (new conversation).
+  -l, --list            List all tmux sessions with attached/unattached state.
+  -h, --help            Show this help and exit.
+      --version         Print version and exit.
+
+  Every short option has a corresponding long option. Short options may be
+  stacked: 'ccmux -nf' is equivalent to 'ccmux --new --fresh'.
+
+ARGUMENTS
+  <name>                Target a session by exact name, bypassing
+                        auto-numbering. Creates the session if it does not
+                        exist. Combine with -t to take over a specific
+                        session (e.g. 'ccmux -t ProjectName-2').
+
+ENVIRONMENT
+  CCMUX_DEFAULT_ARGS    Default arguments passed to `claude` on new session
+                        creation. Empty = plain `claude`. Example:
+                          export CCMUX_DEFAULT_ARGS="--dangerously-skip-permissions -c"
+  CCMUX_SESSION_PREFIX  Override the <project> portion of session names.
+                        Defaults to basename of $PWD.
+
+EXAMPLES
+  ccmux                 Everyday use: attach-or-create in current project.
+  ccmux -n              Spawn an extra Claude alongside the existing ones.
+  ccmux -t              Switched machines: take back lowest-numbered session.
+  ccmux -t ProjectName-2 Take over exactly ProjectName-2.
+  ccmux -T              Detach remote clients from all project sessions.
+  ccmux -p              Plain claude, no default args.
+  ccmux -sf             Safe + fresh (drop --dangerously-skip and -c).
+  ccmux scratch         Create/attach a session literally named "scratch".
+  ccmux -l              What sessions are currently running?
+
+NOTES
+  * Inside an existing tmux session, ccmux refuses to run. Detach first
+    with Ctrl-b d, or open another terminal.
+  * Ctrl-b d detaches a session cleanly; Claude keeps running in the
+    background. Closing a terminal tab also detaches cleanly.
+  * 'tmux kill-session -t <name>' permanently ends a session and its Claude.
+  * Sessions survive editor restart but NOT host reboot.
+HELP
+}
+
+# Expand stacked short flags (e.g. "-nf" -> "-n" "-f"). Long flags (--foo)
+# and single-letter flags (-n) are passed through unchanged.
+ccmux_expand_shorts() {
+    local args=() a
+    for a in "$@"; do
+        if [[ "$a" =~ ^-[a-zA-Z]{2,}$ ]]; then
+            local i=1
+            while [[ $i -lt ${#a} ]]; do
+                args+=("-${a:$i:1}")
+                i=$((i+1))
+            done
+        else
+            args+=("$a")
+        fi
+    done
+    printf '%s\n' "${args[@]}"
+}
+
+# Remove the first occurrence of $1 from the space-separated string $2.
+ccmux_drop_arg() {
+    local target="$1" input="$2"
+    local out=() tok found=0
+    read -r -a tok <<<"$input"
+    local t
+    for t in "${tok[@]}"; do
+        if [[ $found -eq 0 && "$t" == "$target" ]]; then
+            found=1
+            continue
+        fi
+        out+=("$t")
+    done
+    printf '%s' "${out[*]}"
+}
+
+ccmux_main() {
+    local expanded=() line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && expanded+=("$line")
+    done < <(ccmux_expand_shorts "$@")
+    set -- "${expanded[@]}"
+
+    local plain=0 safe=0 fresh=0 force_new=0 takeover=0 takeover_all=0 session=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -p|--plain)         plain=1;        shift ;;
+            -s|--safe)          safe=1;         shift ;;
+            -f|--fresh)         fresh=1;        shift ;;
+            -n|--new)           force_new=1;    shift ;;
+            -t|--takeover)      takeover=1;     shift ;;
+            -T|--takeover-all)  takeover_all=1; shift ;;
+            -l|--list)
+                tmux ls 2>/dev/null || echo "(no tmux sessions)"
+                return 0 ;;
+            -h|--help)    print_help; return 0 ;;
+            --version)    echo "ccmux $CCMUX_VERSION"; return 0 ;;
+            --)           shift; break ;;
+            -*)
+                echo "ccmux: unknown option '$1' (try: ccmux --help)" >&2
+                return 1 ;;
+            *)
+                if [[ -n "$session" ]]; then
+                    echo "ccmux: only one session name allowed (got '$session' and '$1')" >&2
+                    return 1
+                fi
+                session="$1"; shift ;;
+        esac
+    done
+
+    if ! command -v tmux >/dev/null 2>&1; then
+        echo "ccmux: tmux is not installed. Install it and try again." >&2
+        return 127
+    fi
+
+    if [[ $takeover_all -eq 1 ]]; then
+        local project
+        project=${CCMUX_SESSION_PREFIX:-$(basename "$PWD")}
+        project=$(printf '%s' "$project" | tr '.:' '__')
+        local sessions
+        sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null \
+            | awk -v p="^${project}-[0-9]+\$" '$0 ~ p' | sort -V)
+        if [[ -z "$sessions" ]]; then
+            echo "ccmux: no ${project}-N sessions exist to take over."
+            return 0
+        fi
+        local count=0
+        while IFS= read -r s; do
+            tmux detach-client -s "$s" 2>/dev/null
+            count=$((count+1))
+        done <<< "$sessions"
+        echo "ccmux: detached all clients from $count session(s):"
+        echo "$sessions" | sed 's/^/  /'
+        echo "Now open $count terminal(s) and run 'ccmux' in each."
+        return 0
+    fi
+
+    if [[ -n "${TMUX:-}" ]]; then
+        echo "ccmux: already inside a tmux session. Detach (Ctrl-b d) or open another terminal." >&2
+        return 1
+    fi
+
+    local cmd_args="$CCMUX_DEFAULT_ARGS"
+    if [[ $plain -eq 1 ]]; then
+        cmd_args=""
+    else
+        [[ $safe  -eq 1 ]] && cmd_args=$(ccmux_drop_arg "--dangerously-skip-permissions" "$cmd_args")
+        [[ $fresh -eq 1 ]] && cmd_args=$(ccmux_drop_arg "-c" "$cmd_args")
+    fi
+    local cmd="claude"
+    [[ -n "$cmd_args" ]] && cmd="claude $cmd_args"
+
+    local attach_flag="-t"
+    [[ $takeover -eq 1 ]] && attach_flag="-dt"
+
+    if [[ -n "$session" ]]; then
+        session=$(printf '%s' "$session" | tr '.:' '__')
+        if tmux has-session -t "=$session" 2>/dev/null; then
+            tmux attach $attach_flag "=$session"
+        else
+            tmux new-session -s "$session" "$cmd"
+        fi
+        return
+    fi
+
+    local project
+    project=${CCMUX_SESSION_PREFIX:-$(basename "$PWD")}
+    project=$(printf '%s' "$project" | tr '.:' '__')
+
+    if [[ $takeover -eq 1 ]]; then
+        local target
+        target=$(tmux list-sessions -F '#{session_name}' 2>/dev/null \
+            | awk -v p="^${project}-[0-9]+\$" '$0 ~ p' \
+            | sort -V | head -1)
+        if [[ -n "$target" ]]; then
+            tmux attach -dt "=$target"
+            return
+        fi
+        echo "ccmux: no $project-N sessions exist to take over — creating new." >&2
+    fi
+
+    if [[ $force_new -eq 0 ]]; then
+        local target
+        target=$(tmux list-sessions -F '#{session_name} #{session_attached}' 2>/dev/null \
+            | awk -v p="^${project}-[0-9]+\$" '$1 ~ p && $2 == "0" {print $1}' \
+            | sort -V | head -1)
+        if [[ -n "$target" ]]; then
+            tmux attach -t "=$target"
+            return
+        fi
+    fi
+
+    local n=1
+    while tmux has-session -t "=${project}-${n}" 2>/dev/null; do
+        n=$((n+1))
+    done
+    tmux new-session -s "${project}-${n}" "$cmd"
+}
+
+ccmux_main "$@"
