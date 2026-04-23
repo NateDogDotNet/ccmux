@@ -112,9 +112,22 @@ export CCMUX_MOUSE=off
 export CCMUX_TERM=tmux-256color
 ```
 
-A few other quality-of-life improvements are server-scoped in tmux and so can't
-be toggled cleanly per session — add them to your `~/.tmux.conf` if you want
-them. See [Troubleshooting](#troubleshooting) below.
+Two more opt-in tweaks are available for the features that tmux does not expose
+per-session — enabling them modifies your tmux **server** state (persists until
+the server restarts). Both default off; opt in knowingly:
+
+```bash
+# 24-bit true color — appends ',*:RGB' to terminal-features (idempotent).
+export CCMUX_RGB=on
+
+# OSC 52 clipboard passthrough — enables 'set-clipboard on' so mouse-selected
+# text reaches your OS clipboard via your terminal emulator.
+export CCMUX_CLIPBOARD=on
+```
+
+If you'd rather keep ccmux fully non-invasive, leave these off and put the
+equivalent lines in your `~/.tmux.conf` instead — see
+[Troubleshooting](#troubleshooting) for the snippets.
 
 ## Usage
 
@@ -214,12 +227,15 @@ and catch up.
 ccmux already injects `TERM=tmux-256color` into each session it creates, which
 fixes most 256-color rendering issues. If your terminal supports 24-bit true
 color (iTerm2, Kitty, Wezterm, Alacritty, VS Code, Ghostty, modern GNOME
-Terminal, Windows Terminal, etc.) and you still see flat colors, add this to
-your `~/.tmux.conf` — it has to live in tmux itself because the relevant option
-(`terminal-features`) is server-scoped and ccmux can't set it per-session
-without leaking into your other sessions:
+Terminal, Windows Terminal, etc.) and you still see flat colors, pick one:
+
+```bash
+# Let ccmux apply it (server-scope, idempotent, persists until tmux restart):
+export CCMUX_RGB=on
+```
 
 ```
+# Or put it in ~/.tmux.conf yourself and leave CCMUX_RGB off:
 set -sa terminal-features ",*:RGB"
 ```
 
@@ -228,15 +244,20 @@ set -sa terminal-features ",*:RGB"
 With `CCMUX_MOUSE=on` (the default), mouse-selected text lands in tmux's
 internal buffer — you can paste it back into tmux with `Ctrl-b ]` but your
 system clipboard doesn't get it. To route selections to your OS clipboard via
-OSC 52, add to `~/.tmux.conf`:
+OSC 52, pick one:
+
+```bash
+# Let ccmux apply it (server-scope, persists until tmux restart):
+export CCMUX_CLIPBOARD=on
+```
 
 ```
+# Or put it in ~/.tmux.conf yourself and leave CCMUX_CLIPBOARD off:
 set -g set-clipboard on
 ```
 
-Same caveat as above: this is a server-scoped option, so ccmux can't cleanly
-toggle it per session. Most modern terminal emulators honor OSC 52 out of the
-box; some (e.g. recent GNOME Terminal) require a preference to be enabled.
+Most modern terminal emulators honor OSC 52 out of the box; some (e.g. recent
+GNOME Terminal) require a preference to be enabled.
 
 ### `git push` / `gh` fails after switching machines with `-t`
 

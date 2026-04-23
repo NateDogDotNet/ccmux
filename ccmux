@@ -3,7 +3,7 @@
 # https://github.com/NateDogDotNet/ccmux
 # SPDX-License-Identifier: MIT
 
-CCMUX_VERSION="0.1.2"
+CCMUX_VERSION="0.1.3"
 
 # Default arguments passed to `claude` on new session creation.
 # Override by exporting CCMUX_DEFAULT_ARGS before running. Examples:
@@ -27,6 +27,18 @@ CCMUX_MOUSE="${CCMUX_MOUSE:-on}"
 # TERM (inherit from parent shell). Session env only — does not affect other
 # sessions or the tmux server.
 CCMUX_TERM="${CCMUX_TERM:-tmux-256color}"
+
+# OPT-IN server-scope tweaks. Both default OFF because they modify your tmux
+# SERVER state (not just the ccmux session) — the relevant options are not
+# session-scoped in tmux. Set to 'on' if you want them; idempotent across runs.
+#
+# CCMUX_RGB=on        Appends ',*:RGB' to terminal-features so Claude gets
+#                     24-bit true color. Requires a terminal that supports it
+#                     (iTerm2, Kitty, Wezterm, Alacritty, VS Code, Ghostty, ...).
+# CCMUX_CLIPBOARD=on  Sets 'set-clipboard on' so mouse-selected text routes to
+#                     your OS clipboard via OSC 52.
+CCMUX_RGB="${CCMUX_RGB:-off}"
+CCMUX_CLIPBOARD="${CCMUX_CLIPBOARD:-off}"
 
 print_help() {
     cat <<'HELP'
@@ -91,6 +103,17 @@ ENVIRONMENT
                         'new-session -e'. Default 'tmux-256color'. Set to
                         empty string to skip forcing TERM.
 
+  The next two modify your tmux SERVER state (persist until server restart).
+  Both default 'off' — opt in knowingly.
+
+  CCMUX_RGB             'on' or 'off' (default). When on, appends ',*:RGB' to
+                        tmux's terminal-features so Claude gets 24-bit true
+                        color. Idempotent — ccmux only appends if RGB isn't
+                        already present.
+  CCMUX_CLIPBOARD       'on' or 'off' (default). When on, enables OSC 52
+                        clipboard passthrough ('set-clipboard on') so mouse-
+                        selected text reaches your OS clipboard.
+
 EXAMPLES
   ccmux                 Everyday use: attach-or-create in current project.
   ccmux -n              Spawn an extra Claude alongside the existing ones.
@@ -146,12 +169,10 @@ ccmux_drop_arg() {
     printf '%s' "${out[*]}"
 }
 
-# Create a detached tmux session, apply ccmux session-scoped options, then
-# attach. Keeps the user's ~/.tmux.conf and other sessions untouched: we only
-# use options that tmux truly scopes to a single session (mouse via set-option,
-# TERM via -e) rather than options that silently leak to server state
-# (terminal-features, set-clipboard, default-terminal — documented in README
-# as tmux.conf additions instead).
+# Create a detached tmux session, apply ccmux options, then attach. Default
+# options (mouse via set-option -t, TERM via -e) are truly session-scoped and
+# never leak. The opt-in options (CCMUX_RGB, CCMUX_CLIPBOARD) modify server
+# state because tmux does not expose these per-session.
 ccmux_new_session() {
     local name="$1" cmd="$2"
     if [[ -n "$CCMUX_TERM" ]]; then
@@ -161,6 +182,14 @@ ccmux_new_session() {
     fi
     [[ "$CCMUX_MOUSE" == "on" ]] && \
         tmux set-option -t "$name" mouse on >/dev/null 2>&1
+    # Opt-in server-scope tweaks. Idempotent across repeated ccmux invocations.
+    if [[ "$CCMUX_RGB" == "on" ]]; then
+        if ! tmux show-options -s terminal-features 2>/dev/null | grep -q ':RGB'; then
+            tmux set-option -sa terminal-features ",*:RGB" >/dev/null 2>&1
+        fi
+    fi
+    [[ "$CCMUX_CLIPBOARD" == "on" ]] && \
+        tmux set-option -s set-clipboard on >/dev/null 2>&1
     tmux attach -t "=$name"
 }
 
