@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ccmux — Claude Code + tmux launcher. One tmux SESSION per Claude instance.
-# https://github.com/YOUR_USERNAME/ccmux
+# https://github.com/NateDogDotNet/ccmux
 # SPDX-License-Identifier: MIT
 
 CCMUX_VERSION="0.1.0"
