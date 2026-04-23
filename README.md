@@ -9,6 +9,23 @@ Originally built for code-server / VS Code Remote users who want multiple
 Claude instances side-by-side per project, but works anywhere you have bash
 and tmux.
 
+## Demo
+
+A 30-second asciicast of the switching-machines flow lives at
+[`demo.cast`](demo.cast). To play locally:
+
+```bash
+asciinema play demo.cast
+```
+
+To host it on asciinema.org and embed an inline player in this README:
+
+```bash
+asciinema upload demo.cast
+# copy the returned URL and add to this README:
+#   [![asciicast](https://asciinema.org/a/<ID>.svg)](https://asciinema.org/a/<ID>)
+```
+
 ## Why
 
 The Claude Code CLI runs as long as its terminal stays open. Close the browser
@@ -39,8 +56,9 @@ Claude kept running the whole time.
 
 ## Requirements
 
-- **bash** 4.0+ (macOS users: `brew install bash` — the system bash is 3.2)
+- **bash** 4.0+
 - **tmux** 2.0+
+- Linux (no macOS / WSL support at this time)
 - **claude** on `$PATH` ([install instructions](https://docs.claude.com/claude-code))
 
 ## Install
@@ -138,9 +156,9 @@ The script itself runs under bash (shebang pins it). You don't need your
 interactive shell to be bash — just have bash installed.
 
 **Does this work outside code-server?**
-Yes. Any terminal works: native terminal on Linux/macOS, tmux in ssh, etc.
-The code-server use case is what motivated it, but there's nothing
-code-server-specific in the code.
+Yes. Any Linux terminal works — native, tmux in ssh, etc. The code-server
+use case is what motivated it, but there's nothing code-server-specific
+in the code.
 
 ## License
 
