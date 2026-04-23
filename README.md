@@ -276,6 +276,39 @@ The same applies to `$DISPLAY` or any other host-specific env var you rely on.
 tmux's `update-environment` option controls which variables get refreshed on
 attach; the defaults cover the common ones.
 
+### Known Claude Code bugs that show up inside tmux
+
+These are upstream issues in Claude Code itself, not in ccmux or tmux. Linked
+here so you know what you're looking at if you hit one:
+
+- **Rendering corruption — text from different turns overlaps on the same
+  lines.** Ink's virtual buffer gets out of sync during multi-turn tool-call
+  sessions; `tmux refresh-client` and `Ctrl-L` don't clear it. Run `/clear`
+  or restart the session.
+  ([claude-code#29937](https://github.com/anthropics/claude-code/issues/29937))
+
+- **Resize produces duplicated or garbled output (v2.1.116+).** Regression
+  from v2.1.114. Workaround: add `"tui": "fullscreen"` to your
+  `.claude/settings.json`, or pin Claude Code to v2.1.114 until it's fixed.
+  ([claude-code#52309](https://github.com/anthropics/claude-code/issues/52309))
+
+- **Claude hangs at 50–65% CPU and stops responding.** Rare, sometimes after
+  ~30 minutes. Zombie `bash` child left unreaped, main thread spins. Only
+  recovery is `kill -9` on the Claude process — your ccmux tmux session
+  survives, so you can just re-run `claude` in the same pane.
+  ([claude-code#52544](https://github.com/anthropics/claude-code/issues/52544))
+
+- **Paste over SSH uses `xclip` instead of OSC 52.** If you're SSH'd into a
+  headless host and `xclip` isn't installed, paste fails even when your
+  terminal would happily handle OSC 52. Feature request open.
+  ([claude-code#20974](https://github.com/anthropics/claude-code/issues/20974))
+
+- **Desktop notifications don't fire inside tmux.** Claude Code emits bare
+  OSC sequences without tmux's DCS passthrough wrapper, so tmux swallows
+  them. Enabling `allow-passthrough on` in tmux is not sufficient on its
+  own — the fix has to come from Claude Code.
+  ([claude-code#19976](https://github.com/anthropics/claude-code/issues/19976))
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
