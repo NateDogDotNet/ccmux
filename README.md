@@ -100,13 +100,21 @@ Optional session-name override:
 export CCMUX_SESSION_PREFIX="myproject"   # default is basename of $PWD
 ```
 
-Mouse scrolling is enabled by default on ccmux-created sessions (session-scoped,
-never touches your `~/.tmux.conf`). If you prefer keyboard-only navigation, opt
-out:
+By default, ccmux applies two session-scoped tweaks to every new session so
+Claude renders correctly in tmux. Neither touches your `~/.tmux.conf` or other
+sessions:
 
 ```bash
+# Mouse wheel scrolling (disable with CCMUX_MOUSE=off)
 export CCMUX_MOUSE=off
+
+# TERM inside the session (empty string skips forcing TERM)
+export CCMUX_TERM=tmux-256color
 ```
+
+A few other quality-of-life improvements are server-scoped in tmux and so can't
+be toggled cleanly per session — add them to your `~/.tmux.conf` if you want
+them. See [Troubleshooting](#troubleshooting) below.
 
 ## Usage
 
@@ -197,9 +205,55 @@ the fact — it has to go in your tmux config.)
 
 ### The view snaps to the bottom while Claude is "Thinking"
 
-This is a Claude Code UI behavior, not tmux. Recent versions support `Ctrl-6`
-as a freeze toggle: press it once to pause output while you scroll, press again
-to unfreeze and catch up.
+Claude Code UI behavior, not tmux. Recent versions support `Ctrl-6` as a freeze
+toggle: press once to pause output while you scroll, press again to unfreeze
+and catch up.
+
+### Colors look wrong (flat diffs, broken color picker, wrong shades)
+
+ccmux already injects `TERM=tmux-256color` into each session it creates, which
+fixes most 256-color rendering issues. If your terminal supports 24-bit true
+color (iTerm2, Kitty, Wezterm, Alacritty, VS Code, Ghostty, modern GNOME
+Terminal, Windows Terminal, etc.) and you still see flat colors, add this to
+your `~/.tmux.conf` — it has to live in tmux itself because the relevant option
+(`terminal-features`) is server-scoped and ccmux can't set it per-session
+without leaking into your other sessions:
+
+```
+set -sa terminal-features ",*:RGB"
+```
+
+### Copying Claude's output to the OS clipboard
+
+With `CCMUX_MOUSE=on` (the default), mouse-selected text lands in tmux's
+internal buffer — you can paste it back into tmux with `Ctrl-b ]` but your
+system clipboard doesn't get it. To route selections to your OS clipboard via
+OSC 52, add to `~/.tmux.conf`:
+
+```
+set -g set-clipboard on
+```
+
+Same caveat as above: this is a server-scoped option, so ccmux can't cleanly
+toggle it per session. Most modern terminal emulators honor OSC 52 out of the
+box; some (e.g. recent GNOME Terminal) require a preference to be enabled.
+
+### `git push` / `gh` fails after switching machines with `-t`
+
+Classic footgun. When you `ccmux -t` from a new machine, the pane's shell
+still has the old host's `$SSH_AUTH_SOCK` — the socket path is dead, so
+anything that needs your SSH agent silently fails. Fixes:
+
+```bash
+# Inside the reattached pane, refresh the env from tmux:
+eval "$(tmux show-environment -s SSH_AUTH_SOCK)"
+```
+
+Or open a fresh pane (`Ctrl-b c`) — new panes inherit the updated session env.
+
+The same applies to `$DISPLAY` or any other host-specific env var you rely on.
+tmux's `update-environment` option controls which variables get refreshed on
+attach; the defaults cover the common ones.
 
 ## License
 

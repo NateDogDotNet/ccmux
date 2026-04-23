@@ -3,7 +3,7 @@
 # https://github.com/NateDogDotNet/ccmux
 # SPDX-License-Identifier: MIT
 
-CCMUX_VERSION="0.1.1"
+CCMUX_VERSION="0.1.2"
 
 # Default arguments passed to `claude` on new session creation.
 # Override by exporting CCMUX_DEFAULT_ARGS before running. Examples:
@@ -21,6 +21,12 @@ CCMUX_SESSION_PREFIX="${CCMUX_SESSION_PREFIX:-}"
 # click-to-select work. Session-scoped — does not modify your tmux.conf or
 # affect other sessions. Set CCMUX_MOUSE=off to disable.
 CCMUX_MOUSE="${CCMUX_MOUSE:-on}"
+
+# TERM value injected into ccmux sessions via 'new-session -e'. tmux-256color
+# gives Claude proper 256-color rendering. Set to empty string to skip forcing
+# TERM (inherit from parent shell). Session env only — does not affect other
+# sessions or the tmux server.
+CCMUX_TERM="${CCMUX_TERM:-tmux-256color}"
 
 print_help() {
     cat <<'HELP'
@@ -81,6 +87,9 @@ ENVIRONMENT
                         'set-option mouse on' to each session it creates so
                         wheel scrolling works. Session-scoped — never touches
                         your tmux.conf or other sessions.
+  CCMUX_TERM            TERM value injected into new ccmux sessions via
+                        'new-session -e'. Default 'tmux-256color'. Set to
+                        empty string to skip forcing TERM.
 
 EXAMPLES
   ccmux                 Everyday use: attach-or-create in current project.
@@ -138,13 +147,20 @@ ccmux_drop_arg() {
 }
 
 # Create a detached tmux session, apply ccmux session-scoped options, then
-# attach. Keeps the user's ~/.tmux.conf and other sessions untouched.
+# attach. Keeps the user's ~/.tmux.conf and other sessions untouched: we only
+# use options that tmux truly scopes to a single session (mouse via set-option,
+# TERM via -e) rather than options that silently leak to server state
+# (terminal-features, set-clipboard, default-terminal — documented in README
+# as tmux.conf additions instead).
 ccmux_new_session() {
     local name="$1" cmd="$2"
-    tmux new-session -d -s "$name" "$cmd" || return
-    if [[ "$CCMUX_MOUSE" == "on" ]]; then
-        tmux set-option -t "$name" mouse on >/dev/null 2>&1
+    if [[ -n "$CCMUX_TERM" ]]; then
+        tmux new-session -d -e "TERM=$CCMUX_TERM" -s "$name" "$cmd" || return
+    else
+        tmux new-session -d -s "$name" "$cmd" || return
     fi
+    [[ "$CCMUX_MOUSE" == "on" ]] && \
+        tmux set-option -t "$name" mouse on >/dev/null 2>&1
     tmux attach -t "=$name"
 }
 
